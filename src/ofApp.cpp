@@ -2,7 +2,10 @@
 
 //--------------------------------------------------------------
 void ofApp::setup(){
-
+    // Initialize Essentia
+    essentia::init();
+    
+    ofLogNotice("Essentia") << "Essentia initialized successfully!";
 }
 
 //--------------------------------------------------------------
@@ -12,14 +15,15 @@ void ofApp::update(){
 
 //--------------------------------------------------------------
 void ofApp::draw(){
-ofBackground(0);
-ofSetColor(255);
-ofDrawBitmapString("Hello, openFrameworks!", 20, 20);
+    ofBackground(0);
+    ofSetColor(255);
+    ofDrawBitmapString("Hello, openFrameworks with Essentia!", 20, 20);
 }
 
 //--------------------------------------------------------------
 void ofApp::exit(){
-
+    // Shutdown Essentia
+    essentia::shutdown();
 }
 
 //--------------------------------------------------------------

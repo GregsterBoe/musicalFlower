@@ -79,6 +79,9 @@ OF_ROOT = ../../..
 # TODO: should this be a default setting?
 # PROJECT_LDFLAGS=-Wl,-rpath=./libs
 
+# Essentia integration
+PROJECT_LDFLAGS = -L/usr/local/lib -lessentia -lfftw3f -lyaml
+
 ################################################################################
 # PROJECT DEFINES
 #   Create a space-delimited list of DEFINES. The list will be converted into 
@@ -106,6 +109,9 @@ OF_ROOT = ../../..
 #   Note: Leave a leading space when adding list items with the += operator
 ################################################################################
 # PROJECT_CFLAGS = 
+
+# Essentia include path
+PROJECT_CFLAGS = -I/usr/local/include/essentia -I/usr/include/eigen3
 
 ################################################################################
 # PROJECT OPTIMIZATION CFLAGS
@@ -142,4 +148,3 @@ OF_ROOT = ../../..
 # PROJECT_CC = 
 
 # vscode template
-

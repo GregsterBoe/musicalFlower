@@ -1,6 +1,10 @@
 #pragma once
 
 #include "ofMain.h"
+#include <essentia/essentia.h>
+#include <essentia/algorithmfactory.h>
+#include <essentia/streaming/algorithms/poolstorage.h>
+#include <essentia/scheduler/network.h>
 
 class ofApp : public ofBaseApp{
 

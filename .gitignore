@@ -1,0 +1,42 @@
+# openFrameworks .gitignore
+
+# Build files
+obj/
+*.o
+*.a
+
+# Compiled binaries
+bin/musicalFlower
+bin/*.exe
+bin/*.app
+bin/*.dll
+bin/*.so
+bin/*.dylib
+
+# Keep the data folder structure but ignore its contents (you can adjust this)
+# bin/data/*
+# !bin/data/.gitkeep
+
+# Build artifacts
+*.d
+.compiler_flags
+
+# IDE files
+.vscode/
+*.code-workspace
+.idea/
+*.sublime-*
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak

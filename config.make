@@ -80,7 +80,7 @@ OF_ROOT = ../../..
 # PROJECT_LDFLAGS=-Wl,-rpath=./libs
 
 # Essentia integration
-PROJECT_LDFLAGS = -L/usr/local/lib -lessentia -lfftw3f -lyaml
+PROJECT_LDFLAGS = -L/home/gregster/.pyenv/versions/3.11.0/lib -lessentia -lfftw3f -lyaml
 
 ################################################################################
 # PROJECT DEFINES
@@ -111,7 +111,7 @@ PROJECT_LDFLAGS = -L/usr/local/lib -lessentia -lfftw3f -lyaml
 # PROJECT_CFLAGS = 
 
 # Essentia include path
-PROJECT_CFLAGS = -I/usr/local/include/essentia -I/usr/include/eigen3
+PROJECT_CFLAGS = -I/home/gregster/.pyenv/versions/3.11.0/include/essentia -I/usr/include/eigen3
 
 ################################################################################
 # PROJECT OPTIMIZATION CFLAGS

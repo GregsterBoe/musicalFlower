@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nm:*)",
+      "Read(//home/gregster/Documents/OF/download/examples/sound/audioInputExample/src/**)",
+      "Read(//home/gregster/Documents/OF/download/examples/sound/audioInputExample/**)"
+    ]
+  }
+}

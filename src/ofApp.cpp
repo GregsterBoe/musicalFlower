@@ -49,6 +49,9 @@ void ofApp::setup(){
 		autoRouteAudio();
 	}).detach();
 
+	// Setup flower field
+	flowerField.setup(100);
+
 	ofSetFrameRate(60);
 }
 
@@ -116,16 +119,53 @@ void ofApp::update(){
 			smoothedConfidence *= 0.95f;
 		}
 
+		// Compute spectral fullness: fraction of bins with significant energy
+		int activeBins = 0;
+		int totalBins = (int)spectrumValues.size();
+		for(int i = 0; i < totalBins; i++){
+			float db = 20.0f * std::log10(std::max(spectrumValues[i], 1e-10f));
+			if(db > -65.0f) activeBins++;
+		}
+		float rawFullness = (totalBins > 0) ? (float)activeBins / totalBins : 0.0f;
+		// Boost with power curve so typical music lands around 0.4-0.7
+		spectralFullness = std::pow(rawFullness, 0.4f);
+
 		// Add to melody history
 		melodyHistory.push_back({smoothedPitch, smoothedConfidence});
 		if(melodyHistory.size() > 400){
 			melodyHistory.pop_front();
 		}
 	}
+
+	// Update flower field with audio data
+	flowerField.update(rmsVolume, smoothedPitch, smoothedConfidence, spectralFullness);
 }
 
 //--------------------------------------------------------------
 void ofApp::draw(){
+	if(debugMode){
+		drawDebug();
+	} else {
+		drawMain();
+	}
+}
+
+//--------------------------------------------------------------
+void ofApp::drawMain(){
+	ofBackground(0);
+
+	// Draw flower field
+	ofEnableAlphaBlending();
+	flowerField.draw();
+	ofDisableAlphaBlending();
+
+	// Mode hint
+	ofSetColor(50);
+	ofDrawBitmapString("[D] debug mode", 10, ofGetHeight() - 10);
+}
+
+//--------------------------------------------------------------
+void ofApp::drawDebug(){
 	ofBackground(20);
 	float w = ofGetWidth();
 	float h = ofGetHeight();
@@ -233,9 +273,10 @@ void ofApp::draw(){
 	ofSetColor(255, 180, 0);
 	ofDrawRectangle(370, infoY - 12, volDisplay * 100, 14);
 
-	// FPS
+	// FPS and mode hint
 	ofSetColor(80);
 	ofDrawBitmapString("FPS: " + ofToString(ofGetFrameRate(), 0), w - 80, infoY);
+	ofDrawBitmapString("[D] main mode  |  DEBUG", 10, h - 10);
 }
 
 //--------------------------------------------------------------
@@ -329,6 +370,9 @@ void ofApp::exit(){
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
+	if(key == 'd' || key == 'D'){
+		debugMode = !debugMode;
+	}
 }
 
 //--------------------------------------------------------------

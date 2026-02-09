@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ofMain.h"
+#include "Flower.h"
 #include <essentia/essentia.h>
 #include <essentia/algorithmfactory.h>
 #include <mutex>
@@ -30,8 +31,13 @@ class ofApp : public ofBaseApp{
 		void gotMessage(ofMessage msg) override;
 
 	private:
+		void drawDebug();
+		void drawMain();
 		std::string pitchToNoteName(float freqHz);
 		void autoRouteAudio();
+
+		// Mode
+		bool debugMode = true;
 
 		// Audio input
 		ofSoundStream soundStream;
@@ -59,6 +65,10 @@ class ofApp : public ofBaseApp{
 		float smoothedPitch = 0.0f;
 		float smoothedConfidence = 0.0f;
 		std::deque<std::pair<float, float>> melodyHistory; // pitch, confidence
+
+		// Flower field visualization
+		FlowerField flowerField;
+		float spectralFullness = 0.0f;
 
 		// Constants
 		static const int kFrameSize = 2048;

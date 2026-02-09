@@ -1,6 +1,34 @@
 #include "Flower.h"
 
 // ============================================================
+// Petal path utility
+// ============================================================
+
+void buildPetalPath(ofPath& path, const PetalParams& p, ofColor color) {
+	float halfWidth = p.length * p.width;
+	float bulgeY = p.length * ofClamp(p.bulgePosition, 0.05f, 0.95f);
+	float tipWidth = halfWidth * (1.0f - ofClamp(p.tipPointiness, 0.0f, 1.0f));
+	float curveShift = p.edgeCurvature * halfWidth * 0.5f;
+
+	path.clear();
+	path.setFilled(true);
+	path.setFillColor(color);
+
+	path.moveTo(0, 0);
+	path.bezierTo(
+		-(halfWidth + curveShift), -bulgeY,
+		-tipWidth, -(p.length - p.length * 0.08f),
+		0, -p.length
+	);
+	path.bezierTo(
+		tipWidth, -(p.length - p.length * 0.08f),
+		(halfWidth + curveShift), -bulgeY,
+		0, 0
+	);
+	path.close();
+}
+
+// ============================================================
 // Inflorescence
 // ============================================================
 
@@ -19,40 +47,7 @@ InflorescenceParams& Inflorescence::getParams() {
 }
 
 void Inflorescence::rebuild() {
-	const auto& p = params.petal;
-
-	float halfWidth = p.length * p.width;
-	float bulgeY = p.length * ofClamp(p.bulgePosition, 0.05f, 0.95f);
-	float tipWidth = halfWidth * (1.0f - ofClamp(p.tipPointiness, 0.0f, 1.0f));
-
-	// Edge curvature: shifts the bulge control points outward (convex) or inward (concave)
-	float curveShift = p.edgeCurvature * halfWidth * 0.5f;
-
-	petalPath.clear();
-	petalPath.setFilled(true);
-	petalPath.setFillColor(params.petalColor);
-
-	// Petal points up along -Y (screen coords: -Y is up)
-	// Base at origin, tip at (0, -length)
-
-	// Start at base center
-	petalPath.moveTo(0, 0);
-
-	// Left edge: base to tip
-	petalPath.bezierTo(
-		-(halfWidth + curveShift), -bulgeY,       // cp1: widest point on left
-		-tipWidth,                 -(p.length - p.length * 0.08f), // cp2: near tip
-		0,                         -p.length      // tip
-	);
-
-	// Right edge: tip back to base
-	petalPath.bezierTo(
-		tipWidth,                  -(p.length - p.length * 0.08f), // cp1: near tip
-		(halfWidth + curveShift),  -bulgeY,       // cp2: widest point on right
-		0,                         0              // back to base
-	);
-
-	petalPath.close();
+	buildPetalPath(petalPath, params.petal, params.petalColor);
 	dirty = false;
 }
 
@@ -172,6 +167,121 @@ Stem& Flower::getStem() {
 }
 
 // ============================================================
+// Falling Petal System
+// ============================================================
+
+glm::vec2 FallingPetal::drawPosition() const {
+	return glm::vec2(
+		basePosition.x + std::sin(age * waverFreq * TWO_PI + waverPhase) * waverAmp,
+		basePosition.y
+	);
+}
+
+void FallingPetalSystem::setConfig(const FallingPetalConfig& cfg) {
+	config = cfg;
+}
+
+FallingPetalConfig& FallingPetalSystem::getConfig() {
+	return config;
+}
+
+void FallingPetalSystem::spawn(glm::vec2 headPos, float detachAngleDeg,
+                                const PetalParams& shape, ofColor color) {
+	FallingPetal fp;
+
+	float rad = ofDegToRad(detachAngleDeg);
+	float midDist = shape.length * 0.4f;
+	fp.basePosition = glm::vec2(
+		headPos.x + midDist * std::sin(rad),
+		headPos.y - midDist * std::cos(rad)
+	);
+
+	float outward = config.initialUpPop * 0.4f;
+	fp.velocity = glm::vec2(
+		std::sin(rad) * outward,
+		-config.initialUpPop
+	);
+
+	fp.rotation = detachAngleDeg;
+	fp.rotationSpeed = config.tumbleSpeed * ofRandom(0.6f, 1.4f)
+	                    * (ofRandom(1.0f) > 0.5f ? 1.0f : -1.0f);
+	fp.alpha = 1.0f;
+	fp.age = 0.0f;
+	fp.waverPhase = ofRandom(0.0f, TWO_PI);
+	fp.waverAmp = config.waverAmplitude * ofRandom(0.7f, 1.3f);
+	fp.waverFreq = config.waverFrequency * ofRandom(0.7f, 1.3f);
+
+	fp.shape = shape;
+	fp.color = color;
+	fp.alive = true;
+
+	petals.push_back(fp);
+}
+
+void FallingPetalSystem::update(float dt) {
+	for (auto& fp : petals) {
+		if (!fp.alive) continue;
+
+		fp.age += dt;
+
+		if (fp.age > config.maxLifetime || fp.basePosition.y > ofGetHeight() + 50.0f) {
+			fp.alive = false;
+			continue;
+		}
+
+		// Gravity
+		fp.velocity.y += config.gravity * dt;
+
+		// Move base position
+		fp.basePosition += fp.velocity * dt;
+
+		// Tumble
+		fp.rotation += fp.rotationSpeed * dt;
+
+		// Fade after delay
+		if (fp.age > config.fadeDelay) {
+			fp.alpha -= config.fadeSpeed * dt;
+			if (fp.alpha < 0.0f) fp.alpha = 0.0f;
+		}
+
+		if (fp.alpha <= 0.0f) fp.alive = false;
+	}
+
+	// Remove dead petals
+	petals.erase(
+		std::remove_if(petals.begin(), petals.end(),
+			[](const FallingPetal& fp) { return !fp.alive; }),
+		petals.end()
+	);
+}
+
+void FallingPetalSystem::draw() {
+	ofPath path;
+	for (const auto& fp : petals) {
+		if (!fp.alive || fp.alpha <= 0.01f) continue;
+
+		ofColor c = fp.color;
+		c.a = (unsigned char)(fp.alpha * 255.0f);
+		buildPetalPath(path, fp.shape, c);
+
+		glm::vec2 pos = fp.drawPosition();
+		ofPushMatrix();
+		ofTranslate(pos.x, pos.y);
+		ofRotateDeg(fp.rotation);
+		path.draw();
+		ofPopMatrix();
+	}
+}
+
+void FallingPetalSystem::clear() {
+	petals.clear();
+}
+
+int FallingPetalSystem::activeCount() const {
+	return (int)petals.size();
+}
+
+// ============================================================
 // FlowerField
 // ============================================================
 
@@ -239,6 +349,7 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	sp.color = fi.baseStemColor;
 
 	fi.flower.setup(ip, sp);
+	fi.lastVisiblePetals = -1;
 }
 
 void FlowerField::setup(int count) {
@@ -353,6 +464,31 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 
 		fi.currentAlpha = ofClamp(alpha, 0.0f, 1.0f);
 
+		// Detect petal drops and spawn falling petals
+		if (fi.lastVisiblePetals >= 0 && visiblePetals < fi.lastVisiblePetals) {
+			int dropped = fi.lastVisiblePetals - visiblePetals;
+			float screenX = fi.normPos.x * ofGetWidth();
+			float screenY = fi.normPos.y * ofGetHeight();
+			glm::vec2 stemTop = fi.flower.getStem().getTopPosition();
+			glm::vec2 headPos(screenX + stemTop.x, screenY + stemTop.y);
+
+			float angleStep = 360.0f / std::max(fi.lastVisiblePetals, 1);
+			for (int d = 0; d < dropped; d++) {
+				int petalIdx = fi.lastVisiblePetals - 1 - d;
+				float angle = petalIdx * angleStep;
+
+				PetalParams detachedShape;
+				detachedShape.length = fi.baseLength * fi.depthScale * scale * volumePulse;
+				detachedShape.width = fi.baseWidth;
+				detachedShape.tipPointiness = currentPointiness;
+				detachedShape.bulgePosition = fi.baseBulge;
+				detachedShape.edgeCurvature = fi.baseEdgeCurvature;
+
+				fallingPetals.spawn(headPos, angle, detachedShape, fi.basePetalColor);
+			}
+		}
+		fi.lastVisiblePetals = visiblePetals;
+
 		// Update inflorescence params
 		InflorescenceParams ip;
 		ip.petal.count = visiblePetals;
@@ -382,6 +518,9 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 				return a.normPos.y < b.normPos.y;
 			});
 	}
+
+	// Update falling petals
+	fallingPetals.update(dt);
 }
 
 void FlowerField::draw() {
@@ -410,4 +549,7 @@ void FlowerField::draw() {
 
 		fi.flower.draw(screenX, screenY);
 	}
+
+	// Draw falling petals on top of flowers
+	fallingPetals.draw();
 }

@@ -12,6 +12,9 @@ struct PetalParams {
 	float edgeCurvature = 0.2f;  // >0 convex, <0 concave, 0 straight edges
 };
 
+// Build a single petal shape into the given path (shared by Inflorescence and FallingPetalSystem)
+void buildPetalPath(ofPath& path, const PetalParams& params, ofColor color);
+
 // --- Inflorescence (flower head) ---
 
 struct InflorescenceParams {
@@ -103,6 +106,56 @@ struct FlowerInstance {
 	float lifePhase = 0.0f;    // 0-1 progress through bloom→decay cycle
 	float lifeSpeedMult = 1.0f; // slight per-flower speed variation
 	float currentAlpha = 1.0f;  // computed per frame for draw
+	int lastVisiblePetals = -1; // tracks petal count for detecting drops
+};
+
+// --- Falling petal animation ---
+
+struct FallingPetalConfig {
+	float gravity = 50.0f;           // px/s² downward acceleration
+	float waverAmplitude = 25.0f;    // px max horizontal oscillation
+	float waverFrequency = 0.6f;     // oscillations per second
+	float tumbleSpeed = 120.0f;      // degrees/s base tumble rate
+	float fadeDelay = 1.5f;          // seconds before alpha fade begins
+	float fadeSpeed = 0.6f;          // alpha reduction per second
+	float initialUpPop = 10.0f;      // px/s initial upward velocity
+	float maxLifetime = 4.0f;        // seconds before auto-remove
+};
+
+struct FallingPetal {
+	glm::vec2 basePosition;          // center of oscillation (moves with velocity)
+	glm::vec2 velocity;              // px/s
+	float rotation = 0.0f;           // current orientation degrees
+	float rotationSpeed = 0.0f;      // degrees/s tumble
+	float alpha = 1.0f;
+	float age = 0.0f;                // seconds since detach
+	float waverPhase = 0.0f;
+	float waverAmp = 0.0f;
+	float waverFreq = 0.0f;
+
+	PetalParams shape;                // visual shape at final pixel size
+	ofColor color;
+
+	bool alive = true;
+
+	glm::vec2 drawPosition() const;
+};
+
+class FallingPetalSystem {
+public:
+	void setConfig(const FallingPetalConfig& cfg);
+	FallingPetalConfig& getConfig();
+
+	void spawn(glm::vec2 headPos, float detachAngleDeg,
+	           const PetalParams& shape, ofColor color);
+	void update(float dt);
+	void draw();
+	void clear();
+	int activeCount() const;
+
+private:
+	FallingPetalConfig config;
+	std::vector<FallingPetal> petals;
 };
 
 // --- Field of flowers driven by audio ---
@@ -120,4 +173,5 @@ private:
 	float smoothedVolume = 0.0f;
 	float smoothedPitch = 0.0f;
 	float smoothedFullness = 0.0f;
+	FallingPetalSystem fallingPetals;
 };

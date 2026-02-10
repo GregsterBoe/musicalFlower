@@ -47,8 +47,35 @@ InflorescenceParams& Inflorescence::getParams() {
 }
 
 void Inflorescence::rebuild() {
-	buildPetalPath(petalPath, params.petal, params.petalColor);
+	if (params.headType == HeadType::LAYERED_WHORLS) {
+		const auto& w = params.whorls;
+		whorlPaths.resize(w.layerCount);
+		for (int layer = 0; layer < w.layerCount; layer++) {
+			float t = (float)layer / std::max(w.layerCount - 1, 1);
+			PetalParams lp = params.petal;
+			lp.length *= (1.0f - t * (1.0f - w.lengthFalloff));
+			lp.width = std::min(lp.width * (1.0f + t * (w.widthGrowth - 1.0f)), 0.8f);
+			buildPetalPath(whorlPaths[layer], lp, params.petalColor);
+		}
+	} else {
+		buildPetalPath(petalPath, params.petal, params.petalColor);
+	}
 	dirty = false;
+}
+
+Inflorescence::NoiseResult Inflorescence::computeNoise(int petalIdx) const {
+	NoiseResult nr = {1.0f, 0.0f, 0.0f};
+	if (!params.noise.enabled) return nr;
+
+	float seed = params.noise.seed;
+	float time = ofGetElapsedTimef() * params.noise.timeSpeed;
+	float px = seed + petalIdx * 7.3f;
+
+	nr.lengthScale = 1.0f + ofSignedNoise(px, time) * params.noise.lengthAmount;
+	nr.angleDeg = ofSignedNoise(px + 100.0f, time) * params.noise.angleAmount;
+	nr.scaleVal = ofSignedNoise(px + 200.0f, time) * params.noise.scaleAmount;
+
+	return nr;
 }
 
 void Inflorescence::draw() {
@@ -57,12 +84,12 @@ void Inflorescence::draw() {
 	ofPushMatrix();
 	ofRotateDeg(params.rotation);
 
-	float angleStep = 360.0f / params.petal.count;
-	for (int i = 0; i < params.petal.count; i++) {
-		ofPushMatrix();
-		ofRotateDeg(i * angleStep);
-		petalPath.draw();
-		ofPopMatrix();
+	switch (params.headType) {
+		case HeadType::RADIAL:        drawRadial(); break;
+		case HeadType::PHYLLOTAXIS:   drawPhyllotaxis(); break;
+		case HeadType::ROSE_CURVE:    drawRoseCurve(); break;
+		case HeadType::SUPERFORMULA:  drawSuperformula(); break;
+		case HeadType::LAYERED_WHORLS: drawLayeredWhorls(); break;
 	}
 
 	// Center disc
@@ -71,6 +98,124 @@ void Inflorescence::draw() {
 	ofDrawCircle(0, 0, params.centerRadius);
 
 	ofPopMatrix();
+}
+
+void Inflorescence::drawRadial() {
+	int count = params.petal.count;
+	if (count <= 0) return;
+	float angleStep = 360.0f / count;
+	for (int i = 0; i < count; i++) {
+		NoiseResult nr = computeNoise(i);
+		ofPushMatrix();
+		ofRotateDeg(i * angleStep + nr.angleDeg);
+		ofScale(1.0f + nr.scaleVal, nr.lengthScale);
+		petalPath.draw();
+		ofPopMatrix();
+	}
+}
+
+void Inflorescence::drawPhyllotaxis() {
+	int count = params.petal.count;
+	if (count <= 0) return;
+	float c = params.phyllotaxis.spiralSpacing;
+	float goldenAngle = 137.508f;
+
+	for (int i = 0; i < count; i++) {
+		float angle = i * goldenAngle;
+		float r = c * std::sqrt((float)i);
+
+		NoiseResult nr = computeNoise(i);
+
+		ofPushMatrix();
+		float rad = ofDegToRad(angle);
+		ofTranslate(r * std::cos(rad), -r * std::sin(rad));
+		ofRotateDeg(-angle + 90.0f + nr.angleDeg);
+		ofScale(1.0f + nr.scaleVal, nr.lengthScale);
+		petalPath.draw();
+		ofPopMatrix();
+	}
+}
+
+void Inflorescence::drawRoseCurve() {
+	int count = params.petal.count;
+	if (count <= 0) return;
+	float k = params.roseCurve.k;
+	float baseScale = params.roseCurve.baseScale;
+	float angleStep = 360.0f / count;
+
+	for (int i = 0; i < count; i++) {
+		float angle = i * angleStep;
+		float theta = ofDegToRad(angle);
+		float roseVal = std::abs(std::cos(k * theta));
+		float lengthMod = baseScale + roseVal * (1.0f - baseScale);
+
+		NoiseResult nr = computeNoise(i);
+
+		ofPushMatrix();
+		ofRotateDeg(angle + nr.angleDeg);
+		ofScale(1.0f + nr.scaleVal, lengthMod * nr.lengthScale);
+		petalPath.draw();
+		ofPopMatrix();
+	}
+}
+
+void Inflorescence::drawSuperformula() {
+	int count = params.petal.count;
+	if (count <= 0) return;
+	const auto& sf = params.superformula;
+	float angleStep = 360.0f / count;
+
+	for (int i = 0; i < count; i++) {
+		float angle = i * angleStep;
+		float theta = ofDegToRad(angle);
+
+		float ct = std::cos(sf.m * theta / 4.0f) / sf.a;
+		float st = std::sin(sf.m * theta / 4.0f) / sf.b;
+		float term = std::pow(std::abs(ct), sf.n2) + std::pow(std::abs(st), sf.n3);
+		float r = (term > 1e-6f) ? std::pow(term, -1.0f / sf.n1) : 1.0f;
+		r = ofClamp(r, 0.2f, 1.5f);
+
+		NoiseResult nr = computeNoise(i);
+
+		ofPushMatrix();
+		ofRotateDeg(angle + nr.angleDeg);
+		ofScale(1.0f + nr.scaleVal, r * nr.lengthScale);
+		petalPath.draw();
+		ofPopMatrix();
+	}
+}
+
+void Inflorescence::drawLayeredWhorls() {
+	const auto& w = params.whorls;
+	int totalVisible = params.petal.count;
+	if (totalVisible <= 0) return;
+
+	int layers = w.layerCount;
+	int perLayer = w.petalsPerLayer;
+
+	// Draw outer-to-inner (outer = highest indices, drawn first = behind)
+	for (int layer = layers - 1; layer >= 0; layer--) {
+		int layerStart = layer * perLayer;
+		float angleStep = 360.0f / perLayer;
+		float phaseOffset = (layer % 2 == 1) ? angleStep * w.phaseShift : 0.0f;
+
+		int pathIdx = layer;
+		if (pathIdx >= (int)whorlPaths.size()) continue;
+
+		for (int p = 0; p < perLayer; p++) {
+			int globalIdx = layerStart + p;
+			if (globalIdx >= totalVisible) break;
+
+			float angle = p * angleStep + phaseOffset;
+			NoiseResult nr = computeNoise(globalIdx);
+
+			ofPushMatrix();
+			ofRotateDeg(angle + nr.angleDeg);
+			ofScale(1.0f + nr.scaleVal, nr.lengthScale);
+			whorlPaths[pathIdx].draw();
+			ofPopMatrix();
+		}
+	}
 }
 
 // ============================================================
@@ -385,6 +530,43 @@ int FallingPetalSystem::activeCount() const {
 }
 
 // ============================================================
+// Petal position helper
+// ============================================================
+
+PetalPosition computePetalPosition(HeadType type, int petalIdx, int totalPetals,
+                                    const InflorescenceParams& params) {
+	PetalPosition pp;
+	switch (type) {
+		case HeadType::PHYLLOTAXIS: {
+			float goldenAngle = 137.508f;
+			pp.angleDeg = std::fmod(petalIdx * goldenAngle, 360.0f);
+			pp.radiusFromCenter = params.phyllotaxis.spiralSpacing
+			                      * std::sqrt((float)petalIdx);
+			break;
+		}
+		case HeadType::LAYERED_WHORLS: {
+			const auto& w = params.whorls;
+			int perLayer = w.petalsPerLayer;
+			int layer = petalIdx / perLayer;
+			int posInLayer = petalIdx % perLayer;
+			float angleStep = 360.0f / perLayer;
+			float phaseOffset = (layer % 2 == 1) ? angleStep * w.phaseShift : 0.0f;
+			pp.angleDeg = std::fmod(posInLayer * angleStep + phaseOffset, 360.0f);
+			pp.radiusFromCenter = 0.0f;
+			break;
+		}
+		default: {
+			float angleStep = 360.0f / std::max(totalPetals, 1);
+			pp.angleDeg = std::fmod(petalIdx * angleStep, 360.0f);
+			pp.radiusFromCenter = 0.0f;
+			break;
+		}
+	}
+	if (pp.angleDeg < 0.0f) pp.angleDeg += 360.0f;
+	return pp;
+}
+
+// ============================================================
 // FlowerField
 // ============================================================
 
@@ -397,14 +579,57 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	float depthT = (fi.normPos.y - 0.05f) / 0.93f;
 	fi.depthScale = ofLerp(0.3f, 1.2f, depthT);
 
-	// Random base petal properties
-	fi.basePetalCount = (int)ofRandom(4, 9);
+	// Random base petal properties (defaults; head type may override some)
 	fi.baseLength = ofRandom(35.0f, 75.0f);
 	fi.baseWidth = ofRandom(0.2f, 0.55f);
 	fi.basePointiness = ofRandom(0.2f, 0.8f);
 	fi.baseBulge = ofRandom(0.3f, 0.7f);
 	fi.baseEdgeCurvature = ofRandom(-0.15f, 0.4f);
 	fi.baseCenterRadius = ofRandom(4.0f, 12.0f);
+
+	// Assign head type with weighted distribution
+	float typeRoll = ofRandom(1.0f);
+	if (typeRoll < 0.25f) {
+		fi.baseHeadType = HeadType::RADIAL;
+		fi.basePetalCount = (int)ofRandom(4, 9);
+	} else if (typeRoll < 0.45f) {
+		fi.baseHeadType = HeadType::PHYLLOTAXIS;
+		fi.basePetalCount = (int)ofRandom(25, 41);
+		fi.basePhyllotaxis.spiralSpacing = ofRandom(3.0f, 6.0f);
+		fi.baseLength = ofRandom(15.0f, 30.0f);
+		fi.baseCenterRadius = ofRandom(2.0f, 5.0f);
+	} else if (typeRoll < 0.65f) {
+		fi.baseHeadType = HeadType::ROSE_CURVE;
+		fi.basePetalCount = (int)ofRandom(10, 17);
+		float kOptions[] = {2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 5.0f};
+		fi.baseRoseCurve.k = kOptions[(int)ofRandom(0, 6)];
+		fi.baseRoseCurve.baseScale = ofRandom(0.2f, 0.45f);
+	} else if (typeRoll < 0.80f) {
+		fi.baseHeadType = HeadType::SUPERFORMULA;
+		fi.basePetalCount = (int)ofRandom(12, 21);
+		fi.baseSuperformula.m = ofRandom(3.0f, 8.0f);
+		fi.baseSuperformula.n1 = ofRandom(0.3f, 2.0f);
+		fi.baseSuperformula.n2 = ofRandom(0.5f, 2.0f);
+		fi.baseSuperformula.n3 = ofRandom(0.5f, 2.0f);
+		fi.baseSuperformula.a = ofRandom(0.8f, 1.2f);
+		fi.baseSuperformula.b = ofRandom(0.8f, 1.2f);
+	} else {
+		fi.baseHeadType = HeadType::LAYERED_WHORLS;
+		fi.baseWhorls.layerCount = (int)ofRandom(3, 5);
+		fi.baseWhorls.petalsPerLayer = (int)ofRandom(5, 9);
+		fi.basePetalCount = fi.baseWhorls.layerCount * fi.baseWhorls.petalsPerLayer;
+		fi.baseWhorls.lengthFalloff = ofRandom(0.55f, 0.8f);
+		fi.baseWhorls.widthGrowth = ofRandom(1.2f, 1.6f);
+		fi.baseWhorls.phaseShift = ofRandom(0.4f, 0.6f);
+	}
+
+	// Noise modifier: 60% of flowers get some wobble
+	fi.baseNoise.enabled = (ofRandom(1.0f) > 0.4f);
+	fi.baseNoise.seed = ofRandom(0.0f, 10000.0f);
+	fi.baseNoise.lengthAmount = ofRandom(0.05f, 0.2f);
+	fi.baseNoise.angleAmount = ofRandom(3.0f, 12.0f);
+	fi.baseNoise.scaleAmount = ofRandom(0.03f, 0.12f);
+	fi.baseNoise.timeSpeed = ofRandom(0.1f, 0.5f);
 
 	// Stem
 	fi.baseStemHeight = ofRandom(60.0f, 140.0f);
@@ -456,6 +681,7 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 
 	// Initialize flower with base params (small — will grow)
 	InflorescenceParams ip;
+	ip.headType = fi.baseHeadType;
 	ip.petal.count = fi.basePetalCount;
 	ip.petal.length = 0.1f;
 	ip.petal.width = fi.baseWidth;
@@ -465,6 +691,11 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	ip.centerRadius = 0.1f;
 	ip.petalColor = fi.basePetalColor;
 	ip.centerColor = fi.baseCenterColor;
+	ip.phyllotaxis = fi.basePhyllotaxis;
+	ip.roseCurve = fi.baseRoseCurve;
+	ip.superformula = fi.baseSuperformula;
+	ip.whorls = fi.baseWhorls;
+	ip.noise = fi.baseNoise;
 
 	StemParams sp;
 	sp.height = 0.1f;
@@ -600,10 +831,13 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 			glm::vec2 stemTop = fi.flower.getStem().getTopPosition();
 			glm::vec2 headPos(screenX + stemTop.x, screenY + stemTop.y);
 
-			float angleStep = 360.0f / std::max(fi.lastVisiblePetals, 1);
+			InflorescenceParams currentIp = fi.flower.getInflorescence().getParams();
+
 			for (int d = 0; d < dropped; d++) {
 				int petalIdx = fi.lastVisiblePetals - 1 - d;
-				float angle = petalIdx * angleStep;
+
+				PetalPosition pp = computePetalPosition(
+					fi.baseHeadType, petalIdx, fi.basePetalCount, currentIp);
 
 				PetalParams detachedShape;
 				detachedShape.length = fi.baseLength * fi.depthScale * scale * volumePulse;
@@ -612,13 +846,21 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 				detachedShape.bulgePosition = fi.baseBulge;
 				detachedShape.edgeCurvature = fi.baseEdgeCurvature;
 
-				fallingPetals.spawn(headPos, angle, detachedShape, fi.basePetalColor);
+				// Offset spawn by radial distance (for phyllotaxis spiral)
+				float rad = ofDegToRad(pp.angleDeg);
+				float rScaled = pp.radiusFromCenter * fi.depthScale * scale;
+				glm::vec2 spawnPos = headPos + glm::vec2(
+					rScaled * std::sin(rad),
+					-rScaled * std::cos(rad));
+
+				fallingPetals.spawn(spawnPos, pp.angleDeg, detachedShape, fi.basePetalColor);
 			}
 		}
 		fi.lastVisiblePetals = visiblePetals;
 
 		// Update inflorescence params
 		InflorescenceParams ip;
+		ip.headType = fi.baseHeadType;
 		ip.petal.count = visiblePetals;
 		ip.petal.length = fi.baseLength * fi.depthScale * scale * volumePulse;
 		ip.petal.width = fi.baseWidth;
@@ -628,6 +870,11 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 		ip.centerRadius = fi.baseCenterRadius * fi.depthScale * std::max(scale, 0.1f);
 		ip.petalColor = fi.basePetalColor;
 		ip.centerColor = fi.baseCenterColor;
+		ip.phyllotaxis = fi.basePhyllotaxis;
+		ip.roseCurve = fi.baseRoseCurve;
+		ip.superformula = fi.baseSuperformula;
+		ip.whorls = fi.baseWhorls;
+		ip.noise = fi.baseNoise;
 		fi.flower.getInflorescence().setParams(ip);
 
 		// Update stem params

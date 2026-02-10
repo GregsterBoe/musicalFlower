@@ -15,14 +15,76 @@ struct PetalParams {
 // Build a single petal shape into the given path (shared by Inflorescence and FallingPetalSystem)
 void buildPetalPath(ofPath& path, const PetalParams& params, ofColor color);
 
+// --- Head type enum and type-specific params ---
+
+enum class HeadType {
+	RADIAL,
+	PHYLLOTAXIS,
+	ROSE_CURVE,
+	SUPERFORMULA,
+	LAYERED_WHORLS
+};
+
+struct PhyllotaxisParams {
+	float spiralSpacing = 4.0f;     // 'c' in r = c*sqrt(n)
+};
+
+struct RoseCurveParams {
+	float k = 3.0f;                 // lobe parameter
+	float baseScale = 0.3f;         // min petal length fraction at curve minima
+};
+
+struct SuperformulaParams {
+	float m = 5.0f;
+	float n1 = 1.0f;
+	float n2 = 1.0f;
+	float n3 = 1.0f;
+	float a = 1.0f;
+	float b = 1.0f;
+};
+
+struct LayeredWhorlsParams {
+	int layerCount = 3;
+	int petalsPerLayer = 6;
+	float lengthFalloff = 0.7f;     // inner layers shorter
+	float widthGrowth = 1.4f;       // inner layers wider
+	float phaseShift = 0.5f;        // fraction of angleStep offset per alternate layer
+};
+
+struct NoiseModParams {
+	bool enabled = false;
+	float seed = 0.0f;
+	float lengthAmount = 0.15f;     // +/- fraction of length
+	float angleAmount = 8.0f;       // +/- degrees
+	float scaleAmount = 0.1f;       // +/- uniform scale
+	float timeSpeed = 0.3f;         // noise animation speed
+};
+
+// --- Petal position helper (for falling petal spawn) ---
+
+struct PetalPosition {
+	float angleDeg;
+	float radiusFromCenter;
+};
+
+PetalPosition computePetalPosition(HeadType type, int petalIdx, int totalPetals,
+                                    const struct InflorescenceParams& params);
+
 // --- Inflorescence (flower head) ---
 
 struct InflorescenceParams {
+	HeadType headType = HeadType::RADIAL;
 	PetalParams petal;
 	float centerRadius = 8.0f;
 	float rotation = 0.0f;       // degrees
 	ofColor petalColor{220, 80, 120};
 	ofColor centerColor{255, 220, 50};
+
+	PhyllotaxisParams phyllotaxis;
+	RoseCurveParams roseCurve;
+	SuperformulaParams superformula;
+	LayeredWhorlsParams whorls;
+	NoiseModParams noise;
 };
 
 class Inflorescence {
@@ -34,8 +96,19 @@ public:
 
 private:
 	void rebuild();
+
+	void drawRadial();
+	void drawPhyllotaxis();
+	void drawRoseCurve();
+	void drawSuperformula();
+	void drawLayeredWhorls();
+
+	struct NoiseResult { float lengthScale; float angleDeg; float scaleVal; };
+	NoiseResult computeNoise(int petalIdx) const;
+
 	InflorescenceParams params;
 	ofPath petalPath;
+	std::vector<ofPath> whorlPaths;
 	bool dirty = true;
 };
 
@@ -101,6 +174,14 @@ private:
 struct FlowerInstance {
 	Flower flower;
 	glm::vec2 normPos;          // 0-1 normalized screen position (ground point)
+
+	// Head type
+	HeadType baseHeadType = HeadType::RADIAL;
+	PhyllotaxisParams basePhyllotaxis;
+	RoseCurveParams baseRoseCurve;
+	SuperformulaParams baseSuperformula;
+	LayeredWhorlsParams baseWhorls;
+	NoiseModParams baseNoise;
 
 	// Random base properties (set once at creation)
 	int basePetalCount;

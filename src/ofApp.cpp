@@ -50,7 +50,7 @@ void ofApp::setup(){
 	}).detach();
 
 	// Setup flower field
-	flowerField.setup(100);
+	flowerField.setup(300);
 
 	ofSetFrameRate(60);
 }

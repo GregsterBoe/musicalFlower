@@ -44,8 +44,20 @@ private:
 struct StemParams {
 	float height = 120.0f;
 	float thickness = 3.0f;
+	float taperRatio = 0.3f; // tip thickness as fraction of base (0.1-1.0)
 	float curvature = 0.0f;  // -1 to 1, bend left/right
 	ofColor color{60, 140, 50};
+	int segments = 1;         // 1 = smooth taper, 2+ = visible node joints
+	float nodeWidth = 1.3f;   // thickness multiplier at node joints
+};
+
+struct TendrilDef {
+	float stemT;              // 0-1 position along stem
+	float length;             // fraction of stem height
+	float curlAmount;         // curl rotation (1.0 = half-circle, 2.0 = full)
+	float direction;          // 1=right, -1=left
+	float startAngle;         // degrees tilt from perpendicular
+	float thickness;          // line width
 };
 
 class Stem {
@@ -55,10 +67,16 @@ public:
 	void setParams(const StemParams& params);
 	StemParams& getParams();
 	glm::vec2 getTopPosition() const;
+	void setTendrils(const std::vector<TendrilDef>& tendrils);
 
 private:
 	void rebuild();
+	void drawTendrils();
+	glm::vec2 stemPointAt(float t) const;
+	glm::vec2 stemTangentAt(float t) const;
+
 	StemParams params;
+	std::vector<TendrilDef> tendrils;
 	ofPath stemPath;
 	bool dirty = true;
 };
@@ -94,6 +112,10 @@ struct FlowerInstance {
 	float baseCenterRadius;
 	float baseStemHeight;
 	float baseStemCurvature;
+	float baseTaperRatio;
+	int baseSegments;
+	float baseNodeWidth;
+	std::vector<TendrilDef> baseTendrils;
 	ofColor basePetalColor;
 	ofColor baseCenterColor;
 	ofColor baseStemColor;

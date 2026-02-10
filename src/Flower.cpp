@@ -79,6 +79,7 @@ void Inflorescence::draw() {
 
 void Stem::setup(const StemParams& p) {
 	params = p;
+	tendrils.clear();
 	dirty = true;
 }
 
@@ -99,31 +100,65 @@ glm::vec2 Stem::getTopPosition() const {
 
 void Stem::rebuild() {
 	float h = params.height;
-	float t = params.thickness * 0.5f;
-	float xOffset = params.curvature * h * 0.3f;
+	float xOff = params.curvature * h * 0.3f;
 
-	// Control point for the bend (at mid-height)
-	float cpX = xOffset * 0.6f;
-	float cpY = -h * 0.5f;
+	// Center bezier: P0=base, P3=top
+	glm::vec2 p0(0.0f, 0.0f);
+	glm::vec2 p1(xOff * 0.6f, -h * 0.5f);
+	glm::vec2 p2(xOff, -h + h * 0.1f);
+	glm::vec2 p3(xOff, -h);
 
+	int numSamples = std::max(params.segments * 8, 20);
+
+	std::vector<glm::vec2> leftEdge, rightEdge;
+
+	for (int i = 0; i <= numSamples; i++) {
+		float t = (float)i / numSamples;
+
+		// Evaluate cubic bezier
+		float u = 1.0f - t;
+		glm::vec2 pos = u*u*u*p0 + 3.0f*u*u*t*p1 + 3.0f*u*t*t*p2 + t*t*t*p3;
+		glm::vec2 tang = 3.0f*u*u*(p1 - p0) + 6.0f*u*t*(p2 - p1) + 3.0f*t*t*(p3 - p2);
+
+		// Normal (perpendicular to tangent)
+		float tanLen = glm::length(tang);
+		glm::vec2 normal = (tanLen > 0.001f)
+			? glm::vec2(-tang.y, tang.x) / tanLen
+			: glm::vec2(1.0f, 0.0f);
+
+		// Thickness tapers from base to tip
+		float localHalfThick = params.thickness * 0.5f * ofLerp(1.0f, params.taperRatio, t);
+
+		// Node bumps at segment boundaries
+		if (params.segments > 1) {
+			for (int s = 1; s < params.segments; s++) {
+				float nodeT = (float)s / params.segments;
+				float dist = std::abs(t - nodeT);
+				float bumpRadius = 0.06f;
+				if (dist < bumpRadius) {
+					float bump = 1.0f + (params.nodeWidth - 1.0f)
+						* 0.5f * (1.0f + std::cos(PI * dist / bumpRadius));
+					localHalfThick *= bump;
+				}
+			}
+		}
+
+		leftEdge.push_back(pos - normal * localHalfThick);
+		rightEdge.push_back(pos + normal * localHalfThick);
+	}
+
+	// Build closed path: left edge forward, right edge backward
 	stemPath.clear();
 	stemPath.setFilled(true);
 	stemPath.setFillColor(params.color);
 
-	// Draw stem as a filled shape with thickness
-	// Left edge going up
-	stemPath.moveTo(-t, 0);
-	stemPath.bezierTo(
-		cpX - t, cpY,
-		xOffset - t * 0.7f, -h + h * 0.1f,
-		xOffset, -h
-	);
-	// Right edge coming back down
-	stemPath.bezierTo(
-		xOffset + t * 0.7f, -h + h * 0.1f,
-		cpX + t, cpY,
-		t, 0
-	);
+	stemPath.moveTo(leftEdge[0]);
+	for (size_t i = 1; i < leftEdge.size(); i++) {
+		stemPath.lineTo(leftEdge[i]);
+	}
+	for (int i = (int)rightEdge.size() - 1; i >= 0; i--) {
+		stemPath.lineTo(rightEdge[i]);
+	}
 	stemPath.close();
 
 	dirty = false;
@@ -132,6 +167,74 @@ void Stem::rebuild() {
 void Stem::draw() {
 	if (dirty) rebuild();
 	stemPath.draw();
+	drawTendrils();
+}
+
+void Stem::setTendrils(const std::vector<TendrilDef>& t) {
+	tendrils = t;
+}
+
+glm::vec2 Stem::stemPointAt(float t) const {
+	float h = params.height;
+	float xOff = params.curvature * h * 0.3f;
+	glm::vec2 p0(0.0f, 0.0f);
+	glm::vec2 p1(xOff * 0.6f, -h * 0.5f);
+	glm::vec2 p2(xOff, -h + h * 0.1f);
+	glm::vec2 p3(xOff, -h);
+
+	float u = 1.0f - t;
+	return u*u*u*p0 + 3.0f*u*u*t*p1 + 3.0f*u*t*t*p2 + t*t*t*p3;
+}
+
+glm::vec2 Stem::stemTangentAt(float t) const {
+	float h = params.height;
+	float xOff = params.curvature * h * 0.3f;
+	glm::vec2 p0(0.0f, 0.0f);
+	glm::vec2 p1(xOff * 0.6f, -h * 0.5f);
+	glm::vec2 p2(xOff, -h + h * 0.1f);
+	glm::vec2 p3(xOff, -h);
+
+	float u = 1.0f - t;
+	return 3.0f*u*u*(p1 - p0) + 6.0f*u*t*(p2 - p1) + 3.0f*t*t*(p3 - p2);
+}
+
+void Stem::drawTendrils() {
+	if (tendrils.empty()) return;
+
+	for (const auto& td : tendrils) {
+		glm::vec2 stemPos = stemPointAt(td.stemT);
+		glm::vec2 stemTang = stemTangentAt(td.stemT);
+
+		// Normal pointing right (when stem is vertical)
+		glm::vec2 rightNormal = glm::normalize(glm::vec2(-stemTang.y, stemTang.x));
+		glm::vec2 upTang = glm::normalize(stemTang);
+
+		// Base direction: mix of outward (perpendicular) + upward (along stem)
+		glm::vec2 baseDir = glm::normalize(
+			rightNormal * td.direction * std::cos(ofDegToRad(td.startAngle))
+			+ upTang * std::sin(ofDegToRad(td.startAngle))
+		);
+		float angle = std::atan2(baseDir.y, baseDir.x);
+
+		float actualLength = td.length * params.height;
+		int steps = 15;
+		float segLen = actualLength / steps;
+		glm::vec2 pos = stemPos;
+
+		ofSetColor(params.color);
+		ofSetLineWidth(td.thickness);
+
+		for (int i = 0; i < steps; i++) {
+			float frac = (float)i / steps;
+			angle += td.curlAmount * PI / steps * td.direction;
+			float curSegLen = segLen * (1.0f - frac * 0.4f);
+			glm::vec2 next = pos + glm::vec2(std::cos(angle), std::sin(angle)) * curSegLen;
+			ofDrawLine(pos.x, pos.y, next.x, next.y);
+			pos = next;
+		}
+	}
+
+	ofSetLineWidth(1.0f);
 }
 
 // ============================================================
@@ -307,6 +410,27 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	fi.baseStemHeight = ofRandom(60.0f, 140.0f);
 	fi.baseStemCurvature = ofRandom(-0.4f, 0.4f);
 
+	// Stem diversity: taper + segments
+	fi.baseTaperRatio = ofRandom(0.15f, 0.5f);
+	fi.baseSegments = (ofRandom(1.0f) > 0.4f) ? (int)ofRandom(2, 5) : 1;
+	fi.baseNodeWidth = ofRandom(1.4f, 2.0f);
+
+	// Tendrils (40% of flowers)
+	fi.baseTendrils.clear();
+	if (ofRandom(1.0f) > 0.6f) {
+		int numTendrils = (int)ofRandom(1, 4);
+		for (int i = 0; i < numTendrils; i++) {
+			TendrilDef td;
+			td.stemT = ofRandom(0.2f, 0.7f);
+			td.length = ofRandom(0.15f, 0.35f);
+			td.curlAmount = ofRandom(1.0f, 3.0f);
+			td.direction = (ofRandom(1.0f) > 0.5f) ? 1.0f : -1.0f;
+			td.startAngle = ofRandom(10.0f, 50.0f);
+			td.thickness = ofRandom(1.0f, 2.5f);
+			fi.baseTendrils.push_back(td);
+		}
+	}
+
 	// Colors: warm petal hues
 	float hue = ofRandom(0, 40);
 	if (ofRandom(1.0f) > 0.6f) hue = ofRandom(200, 260);
@@ -345,10 +469,14 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	StemParams sp;
 	sp.height = 0.1f;
 	sp.thickness = ofLerp(1.5f, 4.0f, fi.depthScale);
+	sp.taperRatio = fi.baseTaperRatio;
 	sp.curvature = fi.baseStemCurvature;
 	sp.color = fi.baseStemColor;
+	sp.segments = fi.baseSegments;
+	sp.nodeWidth = fi.baseNodeWidth;
 
 	fi.flower.setup(ip, sp);
+	fi.flower.getStem().setTendrils(fi.baseTendrils);
 	fi.lastVisiblePetals = -1;
 }
 
@@ -506,8 +634,11 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 		StemParams sp;
 		sp.height = fi.baseStemHeight * fi.depthScale * stemScale;
 		sp.thickness = ofLerp(1.5f, 4.0f, fi.depthScale);
+		sp.taperRatio = fi.baseTaperRatio;
 		sp.curvature = ofClamp(fi.baseStemCurvature + stemCurveMod, -2.0f, 2.0f);
 		sp.color = fi.baseStemColor;
+		sp.segments = fi.baseSegments;
+		sp.nodeWidth = fi.baseNodeWidth;
 		fi.flower.getStem().setParams(sp);
 	}
 

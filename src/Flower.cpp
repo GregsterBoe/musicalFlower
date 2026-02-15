@@ -612,6 +612,31 @@ PetalPosition computePetalPosition(HeadType type, int petalIdx, int totalPetals,
 }
 
 // ============================================================
+// Color Schemes
+// ============================================================
+
+struct ColorSchemeDef {
+	const char* name;
+	float hueMin, hueMax;      // petal hue range (0-255 oF HSB)
+	float satMin, satMax;
+	float briMin, briMax;
+};
+
+// 8 palettes spaced around the color wheel
+// oF HSB hue: 0=red, 42=yellow, 85=green, 128=cyan, 170=blue, 213=purple, 255=red
+static const ColorSchemeDef kColorSchemes[8] = {
+	{"Sunset",    5.0f,  25.0f,  180.0f, 240.0f, 200.0f, 255.0f},   // warm orange-red
+	{"Golden",   35.0f,  55.0f,  180.0f, 240.0f, 200.0f, 255.0f},   // amber-yellow
+	{"Emerald",  75.0f, 105.0f,  140.0f, 220.0f, 160.0f, 230.0f},   // green
+	{"Ocean",   115.0f, 145.0f,  130.0f, 210.0f, 170.0f, 240.0f},   // teal-cyan
+	{"Arctic",  150.0f, 175.0f,  100.0f, 180.0f, 190.0f, 255.0f},   // ice-blue
+	{"Twilight",190.0f, 215.0f,  140.0f, 220.0f, 160.0f, 240.0f},   // indigo-purple
+	{"Orchid",  220.0f, 242.0f,  130.0f, 210.0f, 180.0f, 250.0f},   // violet-magenta
+	{"Rose",    242.0f, 255.0f,  150.0f, 230.0f, 190.0f, 255.0f},   // pink-red
+};
+static const int kNumSchemes = 8;
+
+// ============================================================
 // FlowerField
 // ============================================================
 
@@ -701,19 +726,35 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 		}
 	}
 
-	// 1. Pick Petal Color
-	float hue = ofRandom(0, 255); // Using 0-255 range for ofColor HSB
-	fi.basePetalColor.setHsb(hue, ofRandom(150, 230), ofRandom(180, 250));
+	// Color scheme selection
+	int schemeIdx;
+	if (colorMode == 0) {
+		schemeIdx = iterateIndex;
+		iterateIndex = (iterateIndex + 1) % kNumSchemes;
+	} else if (colorMode == 9) {
+		schemeIdx = (int)ofRandom(0, kNumSchemes);
+	} else {
+		schemeIdx = ofClamp(colorMode - 1, 0, kNumSchemes - 1);
+	}
+	const auto& cs = kColorSchemes[schemeIdx];
 
-	// 2. Calculate Complementary Center Color
-	// Add 128 (half of 256) to the hue to get the opposite side of the wheel
-	float centerHue = fmod(hue + 128.0f, 256.0f); 
+	// 1. Pick Petal Color from scheme
+	float hue = ofRandom(cs.hueMin, cs.hueMax);
+	fi.basePetalColor.setHsb(hue, ofRandom(cs.satMin, cs.satMax),
+	                         ofRandom(cs.briMin, cs.briMax));
 
+	// 2. Complementary center color (hue + 128)
+	float centerHue = fmod(hue + 128.0f, 256.0f);
 	fi.baseCenterColor.setHsb(
-		(int)centerHue, 
-		(int)ofRandom(200, 255), // Often centers are more saturated
+		(int)centerHue,
+		(int)ofRandom(200, 255),
 		(int)ofRandom(200, 255)
 	);
+
+	// 3. Stem: natural green tinted slightly toward the scheme
+	float schemeMidHue = (cs.hueMin + cs.hueMax) * 0.5f;
+	float stemHue = fmod(ofLerp(85.0f, schemeMidHue, 0.2f), 256.0f);
+	fi.baseStemColor.setHsb(stemHue, ofRandom(100, 170), ofRandom(80, 160));
 
 	// 3. Assign a Center Type based on Head Type for "Best Fit"
 	if (fi.baseHeadType == HeadType::PHYLLOTAXIS) {
@@ -786,6 +827,22 @@ void FlowerField::setReactiveMode(bool enabled) {
 
 bool FlowerField::isReactiveMode() const {
 	return reactiveMode;
+}
+
+void FlowerField::setColorMode(int mode) {
+	colorMode = ofClamp(mode, 0, 9);
+	iterateIndex = 0;
+}
+
+int FlowerField::getColorMode() const {
+	return colorMode;
+}
+
+std::string FlowerField::getColorSchemeName() const {
+	if (colorMode == 0) return "Cycling";
+	if (colorMode == 9) return "Random";
+	int idx = ofClamp(colorMode - 1, 0, kNumSchemes - 1);
+	return kColorSchemes[idx].name;
 }
 
 void FlowerField::setup(int count) {

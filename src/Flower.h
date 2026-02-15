@@ -296,6 +296,9 @@ public:
 	void draw();
 	void setReactiveMode(bool enabled);
 	bool isReactiveMode() const;
+	void setColorMode(int mode);    // 0=iterate, 1-8=scheme, 9=random
+	int getColorMode() const;
+	std::string getColorSchemeName() const;
 
 private:
 	void respawnFlower(FlowerInstance& fi);
@@ -315,6 +318,10 @@ private:
 	float activityLevel = 0.0f;       // smoothed 0-1 composite activity score
 	std::deque<float> beatHistory;    // timestamps of recent beats (for density)
 	float elapsedTime = 0.0f;         // running clock
+
+	// Color schemes: 0=iterate, 1-8=locked scheme, 9=random
+	int colorMode = 0;
+	int iterateIndex = 0;
 
 	FallingPetalSystem fallingPetals;
 };

@@ -161,14 +161,20 @@ void ofApp::drawMain(){
 
 	// Mode hint
 	ofSetColor(50);
+	std::string hint = "[D] debug  [SPACE] reactive  [0-9] color";
+	int hintX = 10;
 	if (flowerField.isReactiveMode()) {
 		ofSetColor(0, 180, 120);
 		ofDrawBitmapString("REACTIVE", 10, ofGetHeight() - 10);
-		ofSetColor(50);
-		ofDrawBitmapString("[D] debug  [SPACE] reactive mode", 100, ofGetHeight() - 10);
-	} else {
-		ofDrawBitmapString("[D] debug  [SPACE] reactive mode", 10, ofGetHeight() - 10);
+		hintX = 100;
 	}
+	ofSetColor(50);
+	ofDrawBitmapString(hint, hintX, ofGetHeight() - 10);
+
+	// Color scheme name (top-right)
+	std::string schemeName = flowerField.getColorSchemeName();
+	ofSetColor(80);
+	ofDrawBitmapString(schemeName, ofGetWidth() - 8 * schemeName.size() - 10, 20);
 }
 
 //--------------------------------------------------------------
@@ -382,6 +388,10 @@ void ofApp::keyPressed(int key){
 	}
 	if(key == ' '){
 		flowerField.setReactiveMode(!flowerField.isReactiveMode());
+	}
+	// Color schemes: 0=iterate, 1-8=scheme, 9=random
+	if(key >= '0' && key <= '9'){
+		flowerField.setColorMode(key - '0');
 	}
 }
 

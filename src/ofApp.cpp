@@ -122,6 +122,18 @@ void ofApp::update(){
 		// Compute spectral fullness: fraction of bins with significant energy
 		int activeBins = 0;
 		int totalBins = (int)spectrumValues.size();
+
+		// Compute bass energy: RMS of low-frequency bins (20-200 Hz)
+		// Bin width = sampleRate / frameSize = 44100/2048 ≈ 21.5 Hz
+		// Bins 1-9 cover roughly 21-194 Hz
+		{
+			float bassSum = 0.0f;
+			int bassHigh = std::min(9, totalBins - 1);
+			for (int i = 1; i <= bassHigh; i++) {
+				bassSum += spectrumValues[i] * spectrumValues[i];
+			}
+			bassEnergy = std::sqrt(bassSum / std::max(bassHigh, 1));
+		}
 		for(int i = 0; i < totalBins; i++){
 			float db = 20.0f * std::log10(std::max(spectrumValues[i], 1e-10f));
 			if(db > -65.0f) activeBins++;
@@ -138,7 +150,7 @@ void ofApp::update(){
 	}
 
 	// Update flower field with audio data
-	flowerField.update(rmsVolume, smoothedPitch, smoothedConfidence, spectralFullness);
+	flowerField.update(rmsVolume, smoothedPitch, smoothedConfidence, spectralFullness, bassEnergy);
 }
 
 //--------------------------------------------------------------

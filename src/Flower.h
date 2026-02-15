@@ -292,7 +292,7 @@ private:
 class FlowerField {
 public:
 	void setup(int count);
-	void update(float volume, float pitch, float confidence, float fullness);
+	void update(float volume, float pitch, float confidence, float fullness, float bass);
 	void draw();
 	void setReactiveMode(bool enabled);
 	bool isReactiveMode() const;
@@ -308,14 +308,17 @@ private:
 	float smoothedPitch = 0.0f;
 	float smoothedFullness = 0.0f;
 
-	// Beat/onset detection
-	float slowVolume = 0.0f;      // slow EMA for baseline comparison
+	// Beat/onset detection (bass-driven)
+	float fastBass = 0.0f;        // fast EMA of bass energy (tracks transients)
+	float slowBass = 0.0f;        // slow EMA baseline for comparison
 	float beatCooldown = 0.0f;    // seconds until next beat can trigger
+	float slowVolume = 0.0f;      // slow EMA for overall volume baseline
 
 	// Reactive mode: dynamic flower count driven by musical activity
 	bool reactiveMode = false;
 	int baseCount = 300;              // normal-mode count (from setup)
 	float activityLevel = 0.0f;       // smoothed 0-1 composite activity score
+	float activityVariability = 0.0f; // smoothed rate of change — how much music is shifting
 	std::deque<float> beatHistory;    // timestamps of recent beats (for density)
 	float elapsedTime = 0.0f;         // running clock
 

@@ -862,7 +862,7 @@ void FlowerField::setup(int count) {
 		});
 }
 
-void FlowerField::update(float volume, float pitch, float confidence, float fullness) {
+void FlowerField::update(float volume, float pitch, float confidence, float fullness, float bass) {
 	// Smooth inputs (lower alpha = smoother, less jitter)
 	float volAlpha = 0.08f;
 	float fullAlpha = 0.10f;
@@ -889,9 +889,11 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 	float baseSpeed = 1.0f / 18.0f;
 	float speed = baseSpeed * (0.05f + smoothedFullness * 0.95f);
 
-	// In reactive mode, boost lifecycle speed so flowers turn over faster
+	// In reactive mode, boost lifecycle speed only when music is changing
+	// Stable music (low variability) = flowers persist; shifting music = fast turnover
 	if (reactiveMode) {
-		speed *= (1.0f + activityLevel * 1.5f);
+		float varFactor = ofClamp(activityVariability * 15.0f, 0.0f, 1.0f);
+		speed *= (1.0f + varFactor * activityLevel * 1.5f);
 	}
 	// When returning to normal mode with too many flowers, gently accelerate lifecycle
 	else if ((int)instances.size() > baseCount) {
@@ -899,18 +901,23 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 		speed *= (1.0f + (overshoot - 1.0f) * 2.0f);
 	}
 
-	// Beat/onset detection: compare fast volume to slow baseline
-	float slowAlpha = 0.02f;
-	slowVolume = slowVolume * (1.0f - slowAlpha) + smoothedVolume * slowAlpha;
+	// Beat/onset detection: bass energy spike vs slow baseline
+	// Fast tracker follows bass transients closely; slow tracks the average level
+	float fastBassAlpha = 0.35f;   // reacts quickly to bass hits
+	float slowBassAlpha = 0.005f;  // very slow baseline (~3-4 second average)
+	fastBass = fastBass * (1.0f - fastBassAlpha) + bass * fastBassAlpha;
+	slowBass = slowBass * (1.0f - slowBassAlpha) + bass * slowBassAlpha;
+	// Keep slowVolume for activity score
+	slowVolume = slowVolume * 0.98f + smoothedVolume * 0.02f;
 	beatCooldown -= dt;
 	elapsedTime += dt;
 
 	bool beatThisFrame = false;
-	if (beatCooldown <= 0.0f && smoothedVolume > 0.05f) {
-		float ratio = (slowVolume > 0.01f) ? smoothedVolume / slowVolume : 0.0f;
-		if (ratio > 1.4f) {
+	if (beatCooldown <= 0.0f && fastBass > 0.001f) {
+		float ratio = (slowBass > 0.0005f) ? fastBass / slowBass : 0.0f;
+		if (ratio > 1.6f) {
 			beatThisFrame = true;
-			beatCooldown = 0.25f;  // 250ms cooldown between beats
+			beatCooldown = 0.20f;  // 200ms cooldown between beats
 			beatHistory.push_back(elapsedTime);
 		}
 	}
@@ -923,6 +930,13 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 	// Compute activity score (0-1): beat density + volume + fullness
 	float beatDensity = ofClamp((float)beatHistory.size() / 20.0f, 0.0f, 1.0f);
 	float rawActivity = 0.5f * beatDensity + 0.3f * smoothedVolume + 0.2f * smoothedFullness;
+
+	// Track how much activity is changing (variability)
+	// High = music shifting rapidly, low = steady groove
+	float activityDelta = std::abs(rawActivity - activityLevel);
+	float varAlpha = 0.02f;
+	activityVariability = activityVariability * (1.0f - varAlpha) + activityDelta * varAlpha;
+
 	float actAlpha = 0.03f;
 	activityLevel = activityLevel * (1.0f - actAlpha) + rawActivity * actAlpha;
 
@@ -930,11 +944,11 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 	bool needsSort = false;
 	int targetCount = baseCount;
 	if (reactiveMode) {
-		targetCount = (int)ofLerp(30.0f, 1500.0f, activityLevel);
+		targetCount = (int)ofLerp(30.0f, 800.0f, activityLevel);
 	}
 
 	int currentCount = (int)instances.size();
-
+ 
 	// Growing: spawn new flowers (batched to avoid frame spikes)
 	if (currentCount < targetCount) {
 		int toSpawn = std::min(targetCount - currentCount, 10);

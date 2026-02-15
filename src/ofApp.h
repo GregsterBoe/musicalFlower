@@ -69,6 +69,7 @@ class ofApp : public ofBaseApp{
 		// Flower field visualization
 		FlowerField flowerField;
 		float spectralFullness = 0.0f;
+		float bassEnergy = 0.0f;
 
 		// Constants
 		static const int kFrameSize = 2048;

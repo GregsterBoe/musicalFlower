@@ -95,7 +95,7 @@ When petals detach during the losing-petals phase, they become independent physi
 
 ### Reactive Mode
 
-When activated with `Space`, the flower count scales dynamically with musical activity (30-1500 flowers). Activity is a composite score of beat density, volume, and spectral fullness over a sliding 5-second window.
+When activated with `Space`, the flower count scales dynamically with musical activity (30-800 flowers). Activity is a composite score of beat density, volume, and spectral fullness over a sliding 5-second window.
 
 - **High activity**: many flowers spawn with fast rotation
 - **Low activity**: flowers thin out via dramatic fast-death animation (petal burst + stem collapse)

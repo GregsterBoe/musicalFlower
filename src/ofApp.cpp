@@ -161,7 +161,14 @@ void ofApp::drawMain(){
 
 	// Mode hint
 	ofSetColor(50);
-	ofDrawBitmapString("[D] debug mode", 10, ofGetHeight() - 10);
+	if (flowerField.isReactiveMode()) {
+		ofSetColor(0, 180, 120);
+		ofDrawBitmapString("REACTIVE", 10, ofGetHeight() - 10);
+		ofSetColor(50);
+		ofDrawBitmapString("[D] debug  [SPACE] reactive mode", 100, ofGetHeight() - 10);
+	} else {
+		ofDrawBitmapString("[D] debug  [SPACE] reactive mode", 10, ofGetHeight() - 10);
+	}
 }
 
 //--------------------------------------------------------------
@@ -372,6 +379,9 @@ void ofApp::exit(){
 void ofApp::keyPressed(int key){
 	if(key == 'd' || key == 'D'){
 		debugMode = !debugMode;
+	}
+	if(key == ' '){
+		flowerField.setReactiveMode(!flowerField.isReactiveMode());
 	}
 }
 

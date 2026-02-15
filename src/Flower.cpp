@@ -92,12 +92,57 @@ void Inflorescence::draw() {
 		case HeadType::LAYERED_WHORLS: drawLayeredWhorls(); break;
 	}
 
-	// Center disc
+	// Center
+	ofPushStyle();
 	ofFill();
 	ofSetColor(params.centerColor);
-	ofDrawCircle(0, 0, params.centerRadius);
+	drawCenter();
+	ofPopStyle();
 
 	ofPopMatrix();
+}
+
+void Inflorescence::drawCenter() {
+    float r = params.centerRadius;
+    
+    switch (params.centerType) {
+        case CenterType::SIMPLE_DISC:
+            ofDrawCircle(0, 0, r);
+            break;
+
+        case CenterType::STAMENS: {
+            int count = 8 * params.centerDetail;
+            for (int i = 0; i < count; i++) {
+                ofRotateDeg(360.0f / count);
+                ofSetLineWidth(1.5);
+                ofDrawLine(0, 0, r, 0); // The filament
+                ofDrawCircle(r, 0, r * 0.2f); // The anther (tip)
+            }
+            break;
+        }
+
+        case CenterType::POLLEN_GRID: {
+            // A mini phyllotaxis pattern for the center itself
+            for (int i = 0; i < 20 * params.centerDetail; i++) {
+                float angle = i * 137.508f;
+                float dist = (r * 0.8f) * sqrt(i / (20.0f * params.centerDetail));
+                ofDrawCircle(dist * cos(ofDegToRad(angle)), dist * sin(ofDegToRad(angle)), r * 0.15f);
+            }
+            break;
+        }
+
+        case CenterType::GEOMETRIC_STAR: {
+            int points = 5 * params.centerDetail;
+            ofBeginShape();
+            for (int i = 0; i < points * 2; i++) {
+                float angle = i * PI / points;
+                float dist = (i % 2 == 0) ? r : r * 0.5f;
+                ofVertex(cos(angle) * dist, sin(angle) * dist);
+            }
+            ofEndShape(true);
+            break;
+        }
+    }
 }
 
 void Inflorescence::drawRadial() {
@@ -623,13 +668,13 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 		fi.baseWhorls.phaseShift = ofRandom(0.4f, 0.6f);
 	}
 
-	// Noise modifier: 60% of flowers get some wobble
+	// Noise modifier: 60% of flowers get gentle wobble
 	fi.baseNoise.enabled = (ofRandom(1.0f) > 0.4f);
 	fi.baseNoise.seed = ofRandom(0.0f, 10000.0f);
-	fi.baseNoise.lengthAmount = ofRandom(0.05f, 0.2f);
-	fi.baseNoise.angleAmount = ofRandom(3.0f, 12.0f);
-	fi.baseNoise.scaleAmount = ofRandom(0.03f, 0.12f);
-	fi.baseNoise.timeSpeed = ofRandom(0.1f, 0.5f);
+	fi.baseNoise.lengthAmount = ofRandom(0.03f, 0.10f);
+	fi.baseNoise.angleAmount = ofRandom(1.0f, 5.0f);
+	fi.baseNoise.scaleAmount = ofRandom(0.02f, 0.06f);
+	fi.baseNoise.timeSpeed = ofRandom(0.05f, 0.2f);
 
 	// Stem
 	fi.baseStemHeight = ofRandom(60.0f, 140.0f);
@@ -656,28 +701,50 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 		}
 	}
 
-	// Colors: warm petal hues
-	float hue = ofRandom(0, 40);
-	if (ofRandom(1.0f) > 0.6f) hue = ofRandom(200, 260);
-	fi.basePetalColor.setHsb(
-		(int)hue % 256,
-		(int)ofRandom(120, 230),
-		(int)ofRandom(160, 250)
-	);
+	// 1. Pick Petal Color
+	float hue = ofRandom(0, 255); // Using 0-255 range for ofColor HSB
+	fi.basePetalColor.setHsb(hue, ofRandom(150, 230), ofRandom(180, 250));
+
+	// 2. Calculate Complementary Center Color
+	// Add 128 (half of 256) to the hue to get the opposite side of the wheel
+	float centerHue = fmod(hue + 128.0f, 256.0f); 
+
 	fi.baseCenterColor.setHsb(
-		(int)ofRandom(25, 50),
-		(int)ofRandom(180, 240),
+		(int)centerHue, 
+		(int)ofRandom(200, 255), // Often centers are more saturated
 		(int)ofRandom(200, 255)
 	);
-	fi.baseStemColor.setHsb(
-		(int)ofRandom(75, 110),
-		(int)ofRandom(100, 200),
-		(int)ofRandom(60, 160)
-	);
+
+	// 3. Assign a Center Type based on Head Type for "Best Fit"
+	if (fi.baseHeadType == HeadType::PHYLLOTAXIS) {
+		fi.baseCenterType = CenterType::POLLEN_GRID; // Fits the "sunflower" look
+	} else if (fi.baseHeadType == HeadType::RADIAL) {
+		fi.baseCenterType = CenterType::STAMENS;     // Fits the "lily/daisy" look
+	} else {
+		fi.baseCenterType = (ofRandom(1.0f) > 0.5f) ? CenterType::SIMPLE_DISC : CenterType::GEOMETRIC_STAR;
+	}
+	fi.baseCenterDetail = ofRandom(1.0f, 2.5f);
 
 	// Music reactivity personality
 	fi.pitchDirection = (ofRandom(1.0f) > 0.5f) ? 1.0f : -1.0f;
 	fi.lifeSpeedMult = ofRandom(0.7f, 1.3f);
+
+	// Reset fast death state
+	fi.fastDeath = false;
+	fi.fastDeathTimer = 0.0f;
+
+	// Rotation: in reactive mode all flowers rotate faster based on activity
+	fi.rotationAccum = 0.0f;
+	if (reactiveMode) {
+		fi.rotationSpeed = ofRandom(20.0f, 60.0f) * (0.5f + activityLevel);
+		fi.rotationDir = (ofRandom(1.0f) > 0.5f) ? 1.0f : -1.0f;
+	} else if (ofRandom(1.0f) > 0.4f) {
+		fi.rotationSpeed = ofRandom(15.0f, 45.0f);
+		fi.rotationDir = (ofRandom(1.0f) > 0.5f) ? 1.0f : -1.0f;
+	} else {
+		fi.rotationSpeed = 0.0f;
+		fi.rotationDir = 1.0f;
+	}
 
 	// Initialize flower with base params (small — will grow)
 	InflorescenceParams ip;
@@ -691,6 +758,8 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	ip.centerRadius = 0.1f;
 	ip.petalColor = fi.basePetalColor;
 	ip.centerColor = fi.baseCenterColor;
+	ip.centerType = fi.baseCenterType;
+	ip.centerDetail = fi.baseCenterDetail;
 	ip.phyllotaxis = fi.basePhyllotaxis;
 	ip.roseCurve = fi.baseRoseCurve;
 	ip.superformula = fi.baseSuperformula;
@@ -711,7 +780,16 @@ void FlowerField::respawnFlower(FlowerInstance& fi) {
 	fi.lastVisiblePetals = -1;
 }
 
+void FlowerField::setReactiveMode(bool enabled) {
+	reactiveMode = enabled;
+}
+
+bool FlowerField::isReactiveMode() const {
+	return reactiveMode;
+}
+
 void FlowerField::setup(int count) {
+	baseCount = count;
 	instances.resize(count);
 
 	for (auto& fi : instances) {
@@ -728,10 +806,10 @@ void FlowerField::setup(int count) {
 }
 
 void FlowerField::update(float volume, float pitch, float confidence, float fullness) {
-	// Smooth inputs
-	float volAlpha = 0.18f;  // smooth pulse
-	float fullAlpha = 0.15f;
-	float pitchAlpha = 0.3f;
+	// Smooth inputs (lower alpha = smoother, less jitter)
+	float volAlpha = 0.08f;
+	float fullAlpha = 0.10f;
+	float pitchAlpha = 0.12f;
 
 	smoothedVolume = smoothedVolume * (1.0f - volAlpha) + ofClamp(volume * 5.0f, 0.0f, 1.0f) * volAlpha;
 	smoothedFullness = smoothedFullness * (1.0f - fullAlpha) + fullness * fullAlpha;
@@ -754,13 +832,92 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 	float baseSpeed = 1.0f / 18.0f;
 	float speed = baseSpeed * (0.05f + smoothedFullness * 0.95f);
 
+	// In reactive mode, boost lifecycle speed so flowers turn over faster
+	if (reactiveMode) {
+		speed *= (1.0f + activityLevel * 1.5f);
+	}
+	// When returning to normal mode with too many flowers, gently accelerate lifecycle
+	else if ((int)instances.size() > baseCount) {
+		float overshoot = (float)instances.size() / (float)baseCount;
+		speed *= (1.0f + (overshoot - 1.0f) * 2.0f);
+	}
+
+	// Beat/onset detection: compare fast volume to slow baseline
+	float slowAlpha = 0.02f;
+	slowVolume = slowVolume * (1.0f - slowAlpha) + smoothedVolume * slowAlpha;
+	beatCooldown -= dt;
+	elapsedTime += dt;
+
+	bool beatThisFrame = false;
+	if (beatCooldown <= 0.0f && smoothedVolume > 0.05f) {
+		float ratio = (slowVolume > 0.01f) ? smoothedVolume / slowVolume : 0.0f;
+		if (ratio > 1.4f) {
+			beatThisFrame = true;
+			beatCooldown = 0.25f;  // 250ms cooldown between beats
+			beatHistory.push_back(elapsedTime);
+		}
+	}
+
+	// Purge beat history older than 5 seconds
+	while (!beatHistory.empty() && (elapsedTime - beatHistory.front()) > 5.0f) {
+		beatHistory.pop_front();
+	}
+
+	// Compute activity score (0-1): beat density + volume + fullness
+	float beatDensity = ofClamp((float)beatHistory.size() / 20.0f, 0.0f, 1.0f);
+	float rawActivity = 0.5f * beatDensity + 0.3f * smoothedVolume + 0.2f * smoothedFullness;
+	float actAlpha = 0.03f;
+	activityLevel = activityLevel * (1.0f - actAlpha) + rawActivity * actAlpha;
+
+	// Dynamic flower count management
 	bool needsSort = false;
+	int targetCount = baseCount;
+	if (reactiveMode) {
+		targetCount = (int)ofLerp(30.0f, 1500.0f, activityLevel);
+	}
+
+	int currentCount = (int)instances.size();
+
+	// Growing: spawn new flowers (batched to avoid frame spikes)
+	if (currentCount < targetCount) {
+		int toSpawn = std::min(targetCount - currentCount, 10);
+		for (int i = 0; i < toSpawn; i++) {
+			FlowerInstance fi;
+			respawnFlower(fi);
+			fi.lifePhase = 0.0f;
+			instances.push_back(std::move(fi));
+		}
+		needsSort = true;
+	}
+	// Shrinking: randomly mark flowers for dramatic fast death across the field
+	else if (currentCount > targetCount + 5) {
+		int toMark = std::min(currentCount - targetCount, 5);
+		for (int i = 0; i < toMark; i++) {
+			// Try a few random picks to find an eligible flower
+			for (int attempt = 0; attempt < 5; attempt++) {
+				int idx = (int)ofRandom(0, instances.size());
+				auto& candidate = instances[idx];
+				// Only mark flowers that are alive, visible, and not already dying
+				if (!candidate.fastDeath && candidate.lifePhase > 0.15f
+				    && candidate.lifePhase < 0.80f) {
+					candidate.fastDeath = true;
+					candidate.fastDeathTimer = 0.0f;
+					break;
+				}
+			}
+		}
+	}
 
 	for (auto& fi : instances) {
 		// Advance lifecycle
 		fi.lifePhase += speed * fi.lifeSpeedMult * dt;
 
 		if (fi.lifePhase >= 1.0f) {
+			// If over target count, mark for removal instead of respawning
+			if ((int)instances.size() > targetCount) {
+				fi.lifePhase = 999.0f;  // sentinel for removal
+				continue;
+			}
 			respawnFlower(fi);
 			fi.lifePhase = 0.0f;
 			needsSort = true;
@@ -821,7 +978,32 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 			alpha = (1.0f - t) * 0.4f;
 		}
 
+		// Fast death override: all petals burst off, stem collapses rapidly
+		if (fi.fastDeath) {
+			fi.fastDeathTimer += dt * 1.5f;  // ~0.67s total animation
+			if (fi.fastDeathTimer >= 1.0f) {
+				fi.currentAlpha = 0.0f;
+				fi.lifePhase = 999.0f;  // mark for removal
+				continue;
+			}
+			float fd = fi.fastDeathTimer;
+			visiblePetals = 0;                         // all petals pop off on first frame
+			scale = std::max(0.01f, (1.0f - fd) * 0.7f);
+			stemScale = 1.0f - fd * 0.7f;
+			stemCurveMod = fd * 3.0f;                  // dramatic droop
+			alpha = 1.0f - fd * fd;                    // ease-out fade
+		}
+
 		fi.currentAlpha = ofClamp(alpha, 0.0f, 1.0f);
+
+		// Beat-driven rotation: flip direction on onset, speed scaled by volume
+		if (fi.rotationSpeed > 0.0f) {
+			if (beatThisFrame && ofRandom(1.0f) > 0.3f) {
+				fi.rotationDir *= -1.0f;
+			}
+			fi.rotationAccum += fi.rotationSpeed * fi.rotationDir
+			                    * (0.3f + smoothedVolume * 0.7f) * dt;
+		}
 
 		// Detect petal drops and spawn falling petals
 		if (fi.lastVisiblePetals >= 0 && visiblePetals < fi.lastVisiblePetals) {
@@ -868,8 +1050,11 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 		ip.petal.bulgePosition = fi.baseBulge;
 		ip.petal.edgeCurvature = fi.baseEdgeCurvature;
 		ip.centerRadius = fi.baseCenterRadius * fi.depthScale * std::max(scale, 0.1f);
+		ip.rotation = fi.rotationAccum;
 		ip.petalColor = fi.basePetalColor;
 		ip.centerColor = fi.baseCenterColor;
+		ip.centerType = fi.baseCenterType;
+		ip.centerDetail = fi.baseCenterDetail;
 		ip.phyllotaxis = fi.basePhyllotaxis;
 		ip.roseCurve = fi.baseRoseCurve;
 		ip.superformula = fi.baseSuperformula;
@@ -888,6 +1073,12 @@ void FlowerField::update(float volume, float pitch, float confidence, float full
 		sp.nodeWidth = fi.baseNodeWidth;
 		fi.flower.getStem().setParams(sp);
 	}
+
+	// Remove flowers marked for death (sentinel lifePhase)
+	instances.erase(
+		std::remove_if(instances.begin(), instances.end(),
+			[](const FlowerInstance& fi) { return fi.lifePhase >= 2.0f; }),
+		instances.end());
 
 	// Re-sort if any flowers respawned to new y positions
 	if (needsSort) {

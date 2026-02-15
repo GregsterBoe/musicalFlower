@@ -1,5 +1,6 @@
 #pragma once
 #include "ofMain.h"
+#include <deque>
 
 // --- Petal shape parameters ---
 
@@ -23,6 +24,13 @@ enum class HeadType {
 	ROSE_CURVE,
 	SUPERFORMULA,
 	LAYERED_WHORLS
+};
+
+enum class CenterType {
+    SIMPLE_DISC,    // The original circle
+    STAMENS,        // Thin lines with pollen tips
+    POLLEN_GRID,    // Dense clusters of small dots
+    GEOMETRIC_STAR  // A small star-like shape
 };
 
 struct PhyllotaxisParams {
@@ -85,6 +93,9 @@ struct InflorescenceParams {
 	SuperformulaParams superformula;
 	LayeredWhorlsParams whorls;
 	NoiseModParams noise;
+
+	CenterType centerType = CenterType::SIMPLE_DISC;
+    float centerDetail = 1.0f; // Controls density/points
 };
 
 class Inflorescence {
@@ -102,6 +113,7 @@ private:
 	void drawRoseCurve();
 	void drawSuperformula();
 	void drawLayeredWhorls();
+	void drawCenter();
 
 	struct NoiseResult { float lengthScale; float angleDeg; float scaleVal; };
 	NoiseResult computeNoise(int petalIdx) const;
@@ -183,6 +195,11 @@ struct FlowerInstance {
 	LayeredWhorlsParams baseWhorls;
 	NoiseModParams baseNoise;
 
+	//center type
+
+	CenterType baseCenterType = CenterType::SIMPLE_DISC;
+	float baseCenterDetail = 1.0f;
+
 	// Random base properties (set once at creation)
 	int basePetalCount;
 	float baseLength;
@@ -205,11 +222,20 @@ struct FlowerInstance {
 	float pitchDirection;       // +1 or -1: how pitch modulates pointiness
 	float depthScale;           // computed from y position (perspective)
 
+	// Rotation (beat-driven)
+	float rotationAccum = 0.0f;   // accumulated rotation degrees
+	float rotationSpeed = 0.0f;   // base speed deg/s (0 = no rotation)
+	float rotationDir = 1.0f;     // +1 or -1, flipped on beat
+
 	// Lifecycle
 	float lifePhase = 0.0f;    // 0-1 progress through bloom→decay cycle
 	float lifeSpeedMult = 1.0f; // slight per-flower speed variation
 	float currentAlpha = 1.0f;  // computed per frame for draw
 	int lastVisiblePetals = -1; // tracks petal count for detecting drops
+
+	// Fast death: dramatic rapid wilt triggered when flower count needs to shrink
+	bool fastDeath = false;
+	float fastDeathTimer = 0.0f;  // 0-1 progress of fast death animation
 };
 
 // --- Falling petal animation ---
@@ -268,6 +294,8 @@ public:
 	void setup(int count);
 	void update(float volume, float pitch, float confidence, float fullness);
 	void draw();
+	void setReactiveMode(bool enabled);
+	bool isReactiveMode() const;
 
 private:
 	void respawnFlower(FlowerInstance& fi);
@@ -276,5 +304,17 @@ private:
 	float smoothedVolume = 0.0f;
 	float smoothedPitch = 0.0f;
 	float smoothedFullness = 0.0f;
+
+	// Beat/onset detection
+	float slowVolume = 0.0f;      // slow EMA for baseline comparison
+	float beatCooldown = 0.0f;    // seconds until next beat can trigger
+
+	// Reactive mode: dynamic flower count driven by musical activity
+	bool reactiveMode = false;
+	int baseCount = 300;              // normal-mode count (from setup)
+	float activityLevel = 0.0f;       // smoothed 0-1 composite activity score
+	std::deque<float> beatHistory;    // timestamps of recent beats (for density)
+	float elapsedTime = 0.0f;         // running clock
+
 	FallingPetalSystem fallingPetals;
 };

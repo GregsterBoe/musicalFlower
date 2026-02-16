@@ -2,6 +2,8 @@
 
 A real-time music-reactive flower field visualization built with openFrameworks and Essentia. Audio is captured from system playback (e.g. a browser playing music), analyzed for pitch, volume, and spectral content, and used to drive a generative field of flowers that bloom, sway, rotate, and shed petals in response to the music.
 
+![alt text](image.png)
+
 ## Dependencies
 
 - **openFrameworks** (tested with oF 0.12.x) — must be installed at `../../..` relative to this project (standard oF app layout: `apps/myApps/musicalFlower/`)
